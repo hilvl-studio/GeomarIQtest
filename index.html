@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IQ Assessment — Geomar Gulf LLC</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- ===== FIXED HEADER ===== -->
+  <header id="main-header">
+    <div class="header-inner">
+      <span class="brand-name">Geomar Gulf LLC</span>
+    </div>
+  </header>
+
+  <!-- ===== SCREEN: BLOCKED (Re-entry / Voided) ===== -->
+  <div id="screen-blocked" class="screen hidden">
+    <div class="center-wrap">
+      <div class="card blocked-card">
+        <div class="blocked-icon">⛔</div>
+        <h2>Assessment Voided</h2>
+        <p>Re-entry blocked by security policy. Incident logged.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== SCREEN 1: Legal & Privacy ===== -->
+  <div id="screen-legal" class="screen hidden">
+    <div class="center-wrap">
+      <div class="card legal-card">
+        <h2>Privacy &amp; Data Processing Agreement</h2>
+        <div class="legal-scroll">
+          <h3>1. Introduction</h3>
+          <p>Geomar Gulf LLC ("the Company") is committed to protecting the privacy and personal data of all assessment candidates in accordance with applicable data protection regulations, including the General Data Protection Regulation (GDPR) and applicable regional equivalents.</p>
+
+          <h3>2. Data Collected</h3>
+          <p>During this assessment session, the Company collects the following categories of personal data: full legal name, contact phone number, cognitive assessment responses, session metadata, and webcam verification footage used solely for identity confirmation and proctoring integrity purposes.</p>
+
+          <h3>3. Purpose of Processing</h3>
+          <p>Your personal data is processed exclusively for the purpose of evaluating your cognitive aptitude as part of the Company's recruitment and selection process. Data will not be disclosed to third parties outside of the Company's authorized recruitment personnel without your explicit consent.</p>
+
+          <h3>4. Data Retention</h3>
+          <p>Assessment data is retained for a period of 90 days following the conclusion of the relevant recruitment cycle, after which all personal data is securely and permanently deleted in accordance with the Company's data retention and disposal policy.</p>
+
+          <h3>5. Your Rights</h3>
+          <p>You retain the right to access, rectify, restrict processing of, or request the deletion of your personal data at any time by contacting our Data Protection Officer at: <strong>privacy@geomargulf.com</strong>. Requests will be processed within 30 days in accordance with applicable law.</p>
+
+          <h3>6. Browser Storage Policy</h3>
+          <p>This application utilizes session-based browser local storage exclusively to maintain assessment integrity, enforce single-session access controls, and prevent unauthorized re-entry. No third-party tracking cookies, advertising pixels, or cross-site identifiers are deployed.</p>
+
+          <h3>7. Webcam &amp; Proctoring</h3>
+          <p>Camera access is required to enable AI-assisted live proctoring during the assessment. Your webcam feed is used solely for identity verification and session monitoring. No video data is transmitted to external servers beyond the scope of this assessment session.</p>
+
+          <h3>8. Consent Declaration</h3>
+          <p>By clicking "Accept &amp; Continue", you confirm that you have read, fully understood, and freely consent to the collection and processing of your personal data as described in this agreement, and you accept the use of browser storage for assessment security and integrity enforcement purposes.</p>
+        </div>
+        <div class="legal-footer">
+          <p class="cookie-notice">🍪 This application uses browser local storage for assessment security and session integrity. By continuing, you accept our data processing terms outlined above.</p>
+          <button id="btn-accept" class="btn btn-primary btn-full">Accept &amp; Continue</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== SCREEN 2: Candidate Profiling ===== -->
+  <div id="screen-profile" class="screen hidden">
+    <div class="center-wrap">
+      <div class="card profile-card">
+        <div class="card-header">
+          <h2>Candidate Information</h2>
+          <p class="subtitle">Please provide your details accurately to proceed with the assessment.</p>
+        </div>
+        <form id="profile-form" novalidate>
+          <div class="form-group">
+            <label for="input-firstname">First Name</label>
+            <input type="text" id="input-firstname" placeholder="Enter your first name" autocomplete="given-name" required>
+            <span class="field-error" id="err-firstname"></span>
+          </div>
+          <div class="form-group">
+            <label for="input-lastname">Last Name</label>
+            <input type="text" id="input-lastname" placeholder="Enter your last name" autocomplete="family-name" required>
+            <span class="field-error" id="err-lastname"></span>
+          </div>
+          <div class="form-group">
+            <label for="input-phone">Phone Number</label>
+            <input type="tel" id="input-phone" placeholder="+1 (555) 000-0000" autocomplete="tel" required>
+            <span class="field-error" id="err-phone"></span>
+          </div>
+          <button type="submit" class="btn btn-primary btn-full">Next</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== SCREEN 3: Camera Verification ===== -->
+  <div id="screen-camera" class="screen hidden">
+    <div class="center-wrap">
+      <div class="card camera-card">
+        <div class="card-header">
+          <h2>Identity Verification</h2>
+          <p class="subtitle">Camera access is required for live proctoring and assessment integrity monitoring. Your session will be actively supervised.</p>
+        </div>
+        <div class="camera-info">
+          <div class="info-item">🔒 &nbsp;Secure encrypted assessment session</div>
+          <div class="info-item">📷 &nbsp;Live webcam identity monitoring</div>
+          <div class="info-item">🤖 &nbsp;AI-powered proctoring system active</div>
+        </div>
+        <button id="btn-init-camera" class="btn btn-primary btn-full">Initialize Camera</button>
+        <div id="camera-status" class="camera-status hidden">
+          <div class="status-dot"></div>
+          <span>Camera active — Identity verified</span>
+        </div>
+        <button id="btn-start-test" class="btn btn-primary btn-full hidden">Start Test</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== SCREEN 4: Countdown ===== -->
+  <div id="screen-countdown" class="screen hidden">
+    <div class="countdown-wrap">
+      <p class="countdown-label">Assessment begins in</p>
+      <div id="countdown-number" class="countdown-number">5</div>
+      <p class="countdown-sub">Prepare yourself. Do not switch tabs or applications during the assessment.</p>
+    </div>
+  </div>
+
+  <!-- ===== SCREEN 5: Test ===== -->
+  <div id="screen-test" class="screen hidden">
+    <div class="test-layout">
+      <div class="test-header">
+        <div id="question-counter" class="question-counter">Question 1 of 25</div>
+        <div id="timer-widget" class="timer-widget">
+          <span class="timer-label">Time Remaining</span>
+          <span id="timer-value" class="timer-value">25</span>
+          <span class="timer-unit">s</span>
+        </div>
+      </div>
+      <div class="question-image-frame">
+        <img id="question-image" src="" alt="IQ Assessment Question" draggable="false">
+      </div>
+      <div class="choices-grid" id="choices-grid">
+        <button class="btn btn-choice" data-choice="a">A</button>
+        <button class="btn btn-choice" data-choice="b">B</button>
+        <button class="btn btn-choice" data-choice="c">C</button>
+        <button class="btn btn-choice" data-choice="d">D</button>
+        <button class="btn btn-choice" data-choice="e">E</button>
+        <button class="btn btn-choice" data-choice="f">F</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== SCREEN: Time's Up Overlay ===== -->
+  <div id="screen-timesup" class="screen hidden">
+    <div class="timesup-wrap">
+      <div class="timesup-card">
+        <div class="timesup-icon">⏱</div>
+        <h1 class="timesup-text">TIME IS UP</h1>
+        <p class="timesup-sub">Moving to the next question...</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== SCREEN 6: Final Completion ===== -->
+  <div id="screen-final" class="screen hidden">
+    <div class="center-wrap">
+      <p class="final-text">You have completed the assessment.</p>
+    </div>
+  </div>
+
+  <!-- ===== FLOATING CAMERA WIDGET ===== -->
+  <div id="camera-float" class="camera-float hidden">
+    <div class="rec-bar">
+      <span class="rec-dot"></span>
+      <span class="rec-text">AI LIVE TRACKING / REC</span>
+    </div>
+    <video id="camera-video" autoplay muted playsinline></video>
+  </div>
+
+  <script src="questions.js"></script>
+</body>
+</html>
