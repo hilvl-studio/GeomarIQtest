@@ -88,6 +88,11 @@
             <input type="tel" id="input-phone" placeholder="+1 (555) 000-0000" autocomplete="tel" required>
             <span class="field-error" id="err-phone"></span>
           </div>
+          <div class="form-group">
+            <label for="input-designation">Designation</label>
+            <input type="text" id="input-designation" placeholder="e.g. Software Engineer, Project Manager" autocomplete="organization-title" required>
+            <span class="field-error" id="err-designation"></span>
+          </div>
           <button type="submit" class="btn btn-primary btn-full">Next</button>
         </form>
       </div>
@@ -133,8 +138,7 @@
         <div id="question-counter" class="question-counter">Question 1 of 25</div>
         <div id="timer-widget" class="timer-widget">
           <span class="timer-label">Time Remaining</span>
-          <span id="timer-value" class="timer-value">25</span>
-          <span class="timer-unit">s</span>
+          <span id="timer-value" class="timer-value">45:00</span>
         </div>
       </div>
       <div class="question-image-frame">
@@ -148,6 +152,9 @@
         <button class="btn btn-choice" data-choice="e">E</button>
         <button class="btn btn-choice" data-choice="f">F</button>
       </div>
+
+      <!-- Navigation controls (Back / Next / Finish) — managed via JS -->
+      <div id="dynamic-nav-container" class="nav-controls"></div>
     </div>
   </div>
 
@@ -157,7 +164,19 @@
       <div class="timesup-card">
         <div class="timesup-icon">⏱</div>
         <h1 class="timesup-text">TIME IS UP</h1>
-        <p class="timesup-sub">Moving to the next question...</p>
+        <p class="timesup-sub">Submitting your assessment...</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== SCREEN: Submit Results (post-assessment) ===== -->
+  <div id="screen-submit" class="screen hidden">
+    <div class="center-wrap">
+      <div class="card submit-card">
+        <div class="submit-icon">🎯</div>
+        <h2>Assessment Complete</h2>
+        <p class="submit-desc">All 25 questions have been recorded and your cognitive profile has been compiled. Please submit your results to the HR Department to finalise the evaluation process.</p>
+        <button id="btn-submit-hr" class="btn-submit-hr">Submit Results to HR</button>
       </div>
     </div>
   </div>
@@ -166,6 +185,29 @@
   <div id="screen-final" class="screen hidden">
     <div class="center-wrap">
       <p class="final-text">You have completed the assessment.</p>
+    </div>
+  </div>
+
+  <!-- ===== MODAL: Confirm Submission ===== -->
+  <div id="modal-confirm" class="modal-overlay hidden">
+    <div class="modal-box modal-confirm-box">
+      <div class="modal-confirm-icon">📝</div>
+      <h2 class="modal-title">Submit Assessment?</h2>
+      <p class="modal-message">You are about to finalise and submit your assessment results. Once submitted, your answers cannot be changed.</p>
+      <div class="modal-confirm-actions">
+        <button id="modal-confirm-cancel" class="btn-modal-secondary">Go Back</button>
+        <button id="modal-confirm-submit" class="btn-modal-primary">Yes, Submit</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== MODAL: Success Overlay ===== -->
+  <div id="modal-overlay" class="modal-overlay hidden">
+    <div class="modal-box">
+      <div class="modal-checkmark">✓</div>
+      <h2 class="modal-title">Success!</h2>
+      <p class="modal-message">Your assessment profiles and cognitive scores have been securely delivered to the HR Department.</p>
+      <button id="modal-close-btn" class="btn btn-primary modal-close-btn">Close</button>
     </div>
   </div>
 

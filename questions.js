@@ -9,6 +9,24 @@
 const TELEGRAM_BOT_TOKEN = "8983686015:AAEjimFk4BkXzdFcBUDneYL4iBVFcB5q05k";
 const TELEGRAM_CHAT_ID = "-1004394363945";
 
+/* ===== PUZZLEBOT / NOCODB WEBHOOK ===== */
+const WEBHOOK_URL = "L5nNg5rKtkkgEieu3CZeWqBxE9V3aLZv";
+
+/* ===== STATE VARIABLES ===== */
+let currentQuestion      = 0;
+let answers              = [];
+let timerInterval        = null;
+let totalTimeLeft        = 2700;   // 45 minutes in seconds
+let candidateFirstName   = '';
+let candidateLastName    = '';
+let candidatePhone       = '';
+let candidateDesignation = '';
+let testRunning          = false;
+let anticheatArmed       = false;
+let telegramSent         = false;
+let webhookSent          = false;
+let choicesLocked        = false;
+
 /* ===== QUESTION DATABASE =====
    Each entry maps to test-images/[n].webp with its strict answer key.
    Answer key: 1-f, 2-b, 3-a, 4-c, 5-d, 6-b, 7-f, 8-a, 9-d, 10-f,
@@ -43,19 +61,6 @@ const QUESTIONS = [
   { image: 'test-images/25.webp', answer: 'f' },
 ];
 
-/* ===== RUNTIME STATE ===== */
-let candidateFirstName = '';
-let candidateLastName  = '';
-let candidatePhone     = '';
-let currentQuestion    = 0;
-let answers            = [];
-let timerInterval      = null;
-let timeLeft           = 25;
-let testRunning        = false;   // true from countdown start -> finish/terminate
-let anticheatArmed     = false;   // true only during active question display
-let telegramSent       = false;   // guard against duplicate transmissions
-let choicesLocked      = false;   // prevents double-click race on choice buttons
-
 /* ===== DOM REFERENCES ===== */
 const SCREENS = {
   blocked:   document.getElementById('screen-blocked'),
@@ -65,6 +70,7 @@ const SCREENS = {
   countdown: document.getElementById('screen-countdown'),
   test:      document.getElementById('screen-test'),
   timesup:   document.getElementById('screen-timesup'),
+  submit:    document.getElementById('screen-submit'),
   final:     document.getElementById('screen-final'),
 };
 
@@ -77,7 +83,7 @@ const SCREENS = {
  */
 function showScreen(name) {
   Object.values(SCREENS).forEach(function(el) {
-    el.classList.add('hidden');
+    if (el) el.classList.add('hidden');
   });
   if (SCREENS[name]) {
     SCREENS[name].classList.remove('hidden');
@@ -130,6 +136,42 @@ function _xhrSend(url, body) {
 }
 
 /**
+ * PuzzleBot / NocoDB webhook transmission.
+ *
+ * Fires a JSON POST to WEBHOOK_URL in parallel with the Telegram notification.
+ * Field names are case-sensitive and match the NocoDB table schema exactly:
+ *   - "Date"      → current local date/time string
+ *   - "Candidate" → full name (first + last)
+ *   - "Phone"     → candidate phone number
+ *   - "Score"     → result formatted as "N/25"
+ *
+ * A webhookSent guard prevents duplicate submissions if concludeAssessment
+ * is somehow invoked more than once in the same session.
+ *
+ * @param {number} score — raw numeric score (0-25)
+ */
+function sendWebhook(score) {
+  if (webhookSent) return;
+  webhookSent = true;
+
+  var payload = {
+    'Date':      new Date().toLocaleString(),
+    'Candidate': candidateFirstName + ' ' + candidateLastName,
+    'Phone':     candidatePhone,
+    'Score':     score + '/25'
+  };
+
+  fetch(WEBHOOK_URL, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(payload)
+  }).catch(function() {
+    /* Silent failure — webhook delivery is best-effort and
+       must never interrupt the candidate-facing UI flow.    */
+  });
+}
+
+/**
  * Evaluate recorded answers against the answer key.
  * @returns {number} correct answer count (0-25)
  */
@@ -143,62 +185,8 @@ function calculateScore() {
   return score;
 }
 
-/**
- * Build and dispatch the Telegram result payload, then show the final screen.
- * @param {string} status - termination status string
- */
-function concludeAssessment(status) {
-  testRunning    = false;
-  anticheatArmed = false;
-  choicesLocked  = true;
-
-  clearActiveTimer();
-
-  var score    = calculateScore();
-  var fullName = candidateFirstName + ' ' + candidateLastName;
-
-  localStorage.setItem('test_status', 'completed');
-
-  var msg =
-    'IQ Assessment Report - Geomar Gulf LLC' + '\n\n' +
-    'Candidate Name: ' + fullName            + '\n'   +
-    'Phone Number: '   + candidatePhone      + '\n'   +
-    'Final Score: '    + score + ' out of 25' + '\n'  +
-    'Status: '         + status;
-
-  sendTelegram(msg);
-  showScreen('final');
-}
-
-/**
- * Anti-cheat termination path — sets voided state and fires Telegram alert.
- */
-function terminateByAnticheat() {
-  if (!anticheatArmed) return;
-  anticheatArmed = false;
-  testRunning    = false;
-  choicesLocked  = true;
-
-  clearActiveTimer();
-
-  var score    = calculateScore();
-  var fullName = candidateFirstName + ' ' + candidateLastName;
-
-  localStorage.setItem('test_status', 'voided');
-
-  var msg =
-    'IQ Assessment Report - Geomar Gulf LLC'                    + '\n\n' +
-    'Candidate Name: ' + fullName                               + '\n'   +
-    'Phone Number: '   + candidatePhone                         + '\n'   +
-    'Final Score: '    + score + ' out of 25'                   + '\n'   +
-    'Status: Terminated by Anti-Cheat Infraction / Reload Attempt';
-
-  sendTelegram(msg);
-  showScreen('final');
-}
-
 /* ============================================================
-   TIMER ENGINE
+   TIMER ENGINE — 45-Minute Global Countdown
    ============================================================ */
 
 function clearActiveTimer() {
@@ -208,35 +196,68 @@ function clearActiveTimer() {
   }
 }
 
+/**
+ * Render totalTimeLeft into the #timer-value element as MM:SS.
+ * Also updates the timer widget background colour:
+ *   Green  → default (> 15 min remaining)
+ *   Yellow → ≤ 15 minutes remaining
+ *   Red    → ≤ 5 minutes remaining
+ */
 function updateTimerDisplay() {
   var valEl    = document.getElementById('timer-value');
   var widgetEl = document.getElementById('timer-widget');
+  if (!valEl || !widgetEl) return;
 
-  valEl.textContent = timeLeft;
+  var minutes = Math.floor(totalTimeLeft / 60);
+  var seconds = totalTimeLeft % 60;
+  var display = (minutes < 10 ? '0' : '') + minutes + ':' + (seconds < 10 ? '0' : '') + seconds;
 
-  /* Fluid color interpolation via CSS transition on background-color */
+  valEl.textContent = display;
+
+  /* Colour state transitions */
   widgetEl.classList.remove('state-yellow', 'state-red');
-  if (timeLeft <= 5) {
+  if (totalTimeLeft <= 300) {          /* ≤ 5 minutes → Red */
     widgetEl.classList.add('state-red');
-  } else if (timeLeft <= 15) {
+  } else if (totalTimeLeft <= 900) {   /* ≤ 15 minutes → Yellow */
     widgetEl.classList.add('state-yellow');
   }
+  /* > 15 minutes → default Green (no extra class needed) */
 }
 
-function startQuestionTimer() {
+/**
+ * Start the 45-minute global exam countdown.
+ * Decrements totalTimeLeft by 1 every second.
+ * When it reaches zero, triggers the global timeout handler.
+ */
+function startGlobalTimer() {
   clearActiveTimer();
-  timeLeft = 25;
-  updateTimerDisplay();
 
   timerInterval = setInterval(function() {
-    timeLeft--;
+    totalTimeLeft--;
     updateTimerDisplay();
 
-    if (timeLeft <= 0) {
+    if (totalTimeLeft <= 0) {
       clearActiveTimer();
-      handleTimeout();
+      handleGlobalTimeout();
     }
   }, 1000);
+}
+
+/**
+ * Called when the 45-minute global timer reaches zero.
+ * Shows the TIME IS UP overlay, then concludes the assessment.
+ * localStorage is cleared so the candidate may start fresh.
+ */
+function handleGlobalTimeout() {
+  choicesLocked  = true;
+  testRunning    = false;
+  anticheatArmed = false;
+
+  showScreen('timesup');
+
+  setTimeout(function() {
+    concludeAssessment('Time Expired — 45 Minute Limit Reached', true);
+  }, 3000);
 }
 
 /* ============================================================
@@ -268,6 +289,97 @@ window.addEventListener('beforeunload', function(e) {
 });
 
 /* ============================================================
+   ASSESSMENT CONCLUSION
+   ============================================================ */
+
+/**
+ * Build and dispatch the Telegram result payload AND the PuzzleBot
+ * webhook payload in parallel.
+ *
+ * ── INSERTION POINT ──────────────────────────────────────────
+ * The sendWebhook(score) call was added immediately after
+ * sendTelegram(msg) inside this function. Both fire concurrently
+ * and independently; a failure in one does not affect the other.
+ * ─────────────────────────────────────────────────────────────
+ *
+ * @param {string}  status           — termination status string
+ * @param {boolean} skipSubmitScreen — if true, go straight to final screen
+ *                                     (used for timer expiry path).
+ *                                     if false (default), show the
+ *                                     "Submit Results to HR" intermediate screen.
+ *
+ * localStorage is CLEARED on normal completion and timer expiry so the
+ * candidate may open the link again and start a completely fresh session.
+ */
+function concludeAssessment(status, skipSubmitScreen) {
+  testRunning    = false;
+  anticheatArmed = false;
+  choicesLocked  = true;
+
+  clearActiveTimer();
+
+  var score    = calculateScore();
+  var fullName = candidateFirstName + ' ' + candidateLastName;
+
+  /* Clear localStorage so the link is not permanently blocked */
+  localStorage.removeItem('test_status');
+  localStorage.removeItem('candidate_phone');
+
+  /* ── 1. Telegram group notification (existing logic — unchanged) ── */
+  var msg =
+    'IQ Assessment Report - Geomar Gulf LLC' + '\n\n'          +
+    'Candidate Name: '  + fullName            + '\n'            +
+    'Phone Number: '    + candidatePhone       + '\n'            +
+    'Designation: '     + candidateDesignation + '\n'            +
+    'Final Score: '     + score + ' out of 25' + '\n'            +
+    'Status: '          + status;
+
+  sendTelegram(msg);
+
+  /* ── 2. PuzzleBot / NocoDB webhook (new — fires in parallel) ── */
+  sendWebhook(score);
+
+  if (skipSubmitScreen) {
+    /* Timer-expiry path → go directly to final screen */
+    showScreen('final');
+  } else {
+    /* Normal finish path → show "Submit Results to HR" screen */
+    showScreen('submit');
+  }
+}
+
+/**
+ * Anti-cheat termination path — sets voided state and fires Telegram alert.
+ * localStorage is intentionally kept as 'voided' to permanently block re-entry
+ * after a security infraction.
+ */
+function terminateByAnticheat() {
+  if (!anticheatArmed) return;
+  anticheatArmed = false;
+  testRunning    = false;
+  choicesLocked  = true;
+
+  clearActiveTimer();
+
+  var score    = calculateScore();
+  var fullName = candidateFirstName + ' ' + candidateLastName;
+
+  /* Keep 'voided' in localStorage — this candidate remains blocked */
+  localStorage.setItem('test_status', 'voided');
+
+  var msg =
+    'IQ Assessment Report - Geomar Gulf LLC'                    + '\n\n' +
+    'Candidate Name: '  + fullName                              + '\n'   +
+    'Phone Number: '    + candidatePhone                        + '\n'   +
+    'Designation: '     + candidateDesignation                  + '\n'   +
+    'Final Score: '     + score + ' out of 25'                  + '\n'   +
+    'Status: Terminated by Anti-Cheat Infraction / Reload Attempt';
+
+  sendTelegram(msg);
+  showScreen('final');
+}
+
+/* ============================================================
    INITIALISATION — Entry Point
    ============================================================ */
 
@@ -294,14 +406,52 @@ document.addEventListener('DOMContentLoaded', function() {
     return;
   }
 
-  if (storedStatus === 'voided' || storedStatus === 'completed') {
-    /* Previous session exists — block all re-entry */
+  if (storedStatus === 'voided') {
+    /* Anti-cheat violation in a previous session — block all re-entry */
     showScreen('blocked');
     return;
   }
 
-  /* Clean state — begin normal flow */
+  /* Clean state — begin normal flow from Step 1 */
   showScreen('legal');
+
+  /* ── Submit Results to HR button → open success modal ── */
+  var btnSubmitHR = document.getElementById('btn-submit-hr');
+  if (btnSubmitHR) {
+    btnSubmitHR.addEventListener('click', function() {
+      var overlay = document.getElementById('modal-overlay');
+      if (overlay) overlay.classList.remove('hidden');
+    });
+  }
+
+  /* ── Success modal Close button → transition to final screen ── */
+  var btnModalClose = document.getElementById('modal-close-btn');
+  if (btnModalClose) {
+    btnModalClose.addEventListener('click', function() {
+      var overlay = document.getElementById('modal-overlay');
+      if (overlay) overlay.classList.add('hidden');
+      showScreen('final');
+    });
+  }
+
+  /* ── Confirm modal: "Go Back" → close modal, stay on test ── */
+  var btnConfirmCancel = document.getElementById('modal-confirm-cancel');
+  if (btnConfirmCancel) {
+    btnConfirmCancel.addEventListener('click', function() {
+      var confirmModal = document.getElementById('modal-confirm');
+      if (confirmModal) confirmModal.classList.add('hidden');
+    });
+  }
+
+  /* ── Confirm modal: "Yes, Submit" → close modal, conclude assessment ── */
+  var btnConfirmSubmit = document.getElementById('modal-confirm-submit');
+  if (btnConfirmSubmit) {
+    btnConfirmSubmit.addEventListener('click', function() {
+      var confirmModal = document.getElementById('modal-confirm');
+      if (confirmModal) confirmModal.classList.add('hidden');
+      concludeAssessment('Completed Successfully', false);
+    });
+  }
 });
 
 /* ============================================================
@@ -319,9 +469,10 @@ document.getElementById('btn-accept').addEventListener('click', function() {
 document.getElementById('profile-form').addEventListener('submit', function(e) {
   e.preventDefault();
 
-  var firstName = document.getElementById('input-firstname').value.trim();
-  var lastName  = document.getElementById('input-lastname').value.trim();
-  var phone     = document.getElementById('input-phone').value.trim();
+  var firstName   = document.getElementById('input-firstname').value.trim();
+  var lastName    = document.getElementById('input-lastname').value.trim();
+  var phone       = document.getElementById('input-phone').value.trim();
+  var designation = document.getElementById('input-designation').value.trim();
 
   var valid = true;
 
@@ -355,11 +506,22 @@ document.getElementById('profile-form').addEventListener('submit', function(e) {
     document.getElementById('input-phone').classList.remove('error');
   }
 
+  /* Validate Designation */
+  if (!designation) {
+    document.getElementById('err-designation').textContent = 'Designation is required.';
+    document.getElementById('input-designation').classList.add('error');
+    valid = false;
+  } else {
+    document.getElementById('err-designation').textContent = '';
+    document.getElementById('input-designation').classList.remove('error');
+  }
+
   if (!valid) return;
 
-  candidateFirstName = firstName;
-  candidateLastName  = lastName;
-  candidatePhone     = phone;
+  candidateFirstName   = firstName;
+  candidateLastName    = lastName;
+  candidatePhone       = phone;
+  candidateDesignation = designation;
 
   showScreen('camera');
 });
@@ -472,75 +634,121 @@ function launchTest() {
   currentQuestion = 0;
   answers         = [];
   choicesLocked   = false;
+  totalTimeLeft   = 2700;   /* Reset to 45:00 */
 
   showScreen('test');
+
+  /* Render initial timer display then start the global countdown */
+  updateTimerDisplay();
+  startGlobalTimer();
+
   loadQuestion(0);
 }
 
+/**
+ * Load a question by zero-based index.
+ * Updates the question image, counter, navigation controls,
+ * and highlights any previously saved answer for this question.
+ */
 function loadQuestion(index) {
-  if (index >= QUESTIONS.length) {
-    concludeAssessment('Completed Successfully');
-    return;
-  }
+  /* Guard against out-of-range indices */
+  if (index < 0) return;
+  if (index >= QUESTIONS.length) return;
 
-  choicesLocked = false;
+  /* Sync global currentQuestion tracker */
+  currentQuestion = index;
+  choicesLocked   = false;
 
   var q = QUESTIONS[index];
 
-  /* Update image */
+  /* Update question image */
   document.getElementById('question-image').src = q.image;
 
-  /* Update counter */
+  /* Update counter label */
   document.getElementById('question-counter').textContent =
-    'Question ' + (index + 1) + ' of 25';
+    'Question ' + (index + 1) + ' of ' + QUESTIONS.length;
 
-  /* Reset timer widget to green */
-  var widgetEl = document.getElementById('timer-widget');
-  widgetEl.classList.remove('state-yellow', 'state-red');
-
-  /* Start 25-second countdown */
-  startQuestionTimer();
+  /* Render navigation buttons and highlight saved answer */
+  renderNavigationControls(index);
 }
 
-function handleTimeout() {
-  /* Record empty answer for this question */
-  answers[currentQuestion] = '';
-  choicesLocked = true;
+/* ============================================================
+   NAVIGATION CONTROLS RENDERER
+   ============================================================ */
 
-  /* Show TIME IS UP overlay for exactly 3 seconds */
-  showScreen('timesup');
+/**
+ * Inject Back / Next / Finish Assessment buttons into #dynamic-nav-container.
+ * Applies the .btn-nav class for full button styling.
+ * Highlights the previously saved answer for this question index.
+ * "Finish Assessment" opens the custom confirm modal instead of a native dialog.
+ */
+function renderNavigationControls(index) {
+  var controlsFrame = document.getElementById('dynamic-nav-container');
+  if (!controlsFrame) return;
 
-  setTimeout(function() {
-    currentQuestion++;
+  var isFirst = (index === 0);
+  var isLast  = (index === QUESTIONS.length - 1);
 
-    if (currentQuestion >= QUESTIONS.length) {
-      concludeAssessment('Completed Successfully');
-    } else {
-      showScreen('test');
-      loadQuestion(currentQuestion);
+  /* Build button HTML */
+  var html =
+    '<button class="btn-nav" id="btn-nav-back"' + (isFirst ? ' disabled' : '') + '>' +
+    '&#8592; Back' +
+    '</button>';
+
+  if (isLast) {
+    html += '<button class="btn-nav finish" id="btn-nav-finish">Finish Assessment</button>';
+  } else {
+    html += '<button class="btn-nav" id="btn-nav-next">Next &#8594;</button>';
+  }
+
+  controlsFrame.innerHTML = html;
+
+  /* ── Highlight saved answer for this question (dark graphite) ── */
+  document.querySelectorAll('.btn-choice').forEach(function(btn) {
+    btn.classList.remove('selected');
+    if (answers[index] && answers[index] === btn.getAttribute('data-choice')) {
+      btn.classList.add('selected');
     }
-  }, 3000);
+  });
+
+  /* ── Bind navigation click handlers ── */
+  document.getElementById('btn-nav-back').onclick = function() {
+    loadQuestion(index - 1);
+  };
+
+  if (isLast) {
+    /* Open the custom styled confirm modal — no native confirm() dialog */
+    document.getElementById('btn-nav-finish').onclick = function() {
+      var confirmModal = document.getElementById('modal-confirm');
+      if (confirmModal) confirmModal.classList.remove('hidden');
+    };
+  } else {
+    document.getElementById('btn-nav-next').onclick = function() {
+      loadQuestion(index + 1);
+    };
+  }
 }
 
-/* ===== CHOICE BUTTON HANDLER ===== */
+/* ============================================================
+   CHOICE BUTTON HANDLER
+   Clicking a choice records the answer and highlights the button.
+   Does NOT auto-advance — the candidate uses the Next button to proceed.
+   ============================================================ */
+
 document.getElementById('choices-grid').addEventListener('click', function(e) {
   if (choicesLocked) return;
 
   var btn = e.target.closest('.btn-choice');
   if (!btn) return;
 
-  /* Lock immediately to prevent double-click race */
-  choicesLocked = true;
-  clearActiveTimer();
-
   var choice = btn.getAttribute('data-choice');
+
+  /* Record answer for the current question */
   answers[currentQuestion] = choice;
 
-  currentQuestion++;
-
-  if (currentQuestion >= QUESTIONS.length) {
-    concludeAssessment('Completed Successfully');
-  } else {
-    loadQuestion(currentQuestion);
-  }
+  /* Update visual selection — remove from all, apply to clicked */
+  document.querySelectorAll('.btn-choice').forEach(function(b) {
+    b.classList.remove('selected');
+  });
+  btn.classList.add('selected');
 });
