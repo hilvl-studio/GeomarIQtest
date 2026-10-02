@@ -236,13 +236,11 @@ async function sendGoogleSheetsWebhook() {
       redirect: 'error',
       headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
       body: JSON.stringify(payload)
-    });
-    if (response.type !== 'opaque' && !response.ok) {
-      throw new Error('Submission failed with HTTP status ' + response.status + '.');
-    }
-    webhookSent = true;
-    return response.type === 'opaque' ? 'unverified' : 'confirmed';
-  })();
+  });
+  
+  webhookSent = true;
+  return response.type === 'opaque' ? 'unverified' : 'confirmed';
+})();
 
   try {
     return await webhookPromise;
