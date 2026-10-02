@@ -5,66 +5,41 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>IQ Assessment — Geomar Gulf LLC</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="layout.css">
 </head>
 <body>
-
-  <!-- ===== FIXED HEADER ===== -->
   <header id="main-header">
     <div class="header-inner">
       <span class="brand-name">Geomar Gulf LLC</span>
     </div>
   </header>
 
-  <!-- ===== SCREEN: BLOCKED (Re-entry / Voided) ===== -->
-  <div id="screen-blocked" class="screen hidden">
-    <div class="center-wrap">
-      <div class="card blocked-card">
-        <div class="blocked-icon">⛔</div>
-        <h2>Assessment Voided</h2>
-        <p>Re-entry blocked by security policy. Incident logged.</p>
-      </div>
-    </div>
-  </div>
-
-  <!-- ===== SCREEN 1: Legal & Privacy ===== -->
-  <div id="screen-legal" class="screen hidden">
+  <div id="screen-legal" class="screen">
     <div class="center-wrap">
       <div class="card legal-card">
         <h2>Privacy &amp; Data Processing Agreement</h2>
         <div class="legal-scroll">
-          <h3>1. Introduction</h3>
-          <p>Geomar Gulf LLC ("the Company") is committed to protecting the privacy and personal data of all assessment candidates in accordance with applicable data protection regulations, including the General Data Protection Regulation (GDPR) and applicable regional equivalents.</p>
-
-          <h3>2. Data Collected</h3>
-          <p>During this assessment session, the Company collects the following categories of personal data: full legal name, contact phone number, cognitive assessment responses, session metadata, and webcam verification footage used solely for identity confirmation and proctoring integrity purposes.</p>
-
-          <h3>3. Purpose of Processing</h3>
-          <p>Your personal data is processed exclusively for the purpose of evaluating your cognitive aptitude as part of the Company's recruitment and selection process. Data will not be disclosed to third parties outside of the Company's authorized recruitment personnel without your explicit consent.</p>
-
-          <h3>4. Data Retention</h3>
-          <p>Assessment data is retained for a period of 90 days following the conclusion of the relevant recruitment cycle, after which all personal data is securely and permanently deleted in accordance with the Company's data retention and disposal policy.</p>
-
-          <h3>5. Your Rights</h3>
-          <p>You retain the right to access, rectify, restrict processing of, or request the deletion of your personal data at any time by contacting our Data Protection Officer at: <strong>privacy@geomargulf.com</strong>. Requests will be processed within 30 days in accordance with applicable law.</p>
-
-          <h3>6. Browser Storage Policy</h3>
-          <p>This application utilizes session-based browser local storage exclusively to maintain assessment integrity, enforce single-session access controls, and prevent unauthorized re-entry. No third-party tracking cookies, advertising pixels, or cross-site identifiers are deployed.</p>
-
-          <h3>7. Webcam &amp; Proctoring</h3>
-          <p>Camera access is required to enable AI-assisted live proctoring during the assessment. Your webcam feed is used solely for identity verification and session monitoring. No video data is transmitted to external servers beyond the scope of this assessment session.</p>
-
-          <h3>8. Consent Declaration</h3>
-          <p>By clicking "Accept &amp; Continue", you confirm that you have read, fully understood, and freely consent to the collection and processing of your personal data as described in this agreement, and you accept the use of browser storage for assessment security and integrity enforcement purposes.</p>
+          <h3>1. Assessment Data</h3>
+          <p>This assessment uses your name, phone number, designation, and answers during the current browser session. When you submit, only your name, phone number, and score are included in the request.</p>
+          <h3>2. Submission Destination</h3>
+          <p>The configured submission endpoint is https://google.com. This address is not a Google Sheets webhook. The application cannot confirm delivery to HR or storage in Google Sheets, and does not control the destination's retention policy. Continue only if you consent to sending your name, phone number, and score to this address.</p>
+          <h3>3. Camera Access</h3>
+          <p>Camera access is required before the test can start. The webcam preview is local to your browser. This application does not record, upload, or perform AI analysis of the camera feed. The camera is stopped when the assessment ends.</p>
+          <h3>4. Browser Storage &amp; Navigation</h3>
+          <p>Assessment answers are held in memory, not saved to browser storage. Refreshing or closing the page loses your progress. Switching tabs or applications does not invalidate or lock the test; the 45-minute assessment timer continues.</p>
+          <h3>5. Scoring Limitation</h3>
+          <p>The answer key for question 9 was corrupted in the existing files and could not be verified. That question currently earns no points. Scores are provisional until its answer key is restored.</p>
+          <h3>6. Consent</h3>
+          <p>By clicking "Accept &amp; Continue", you consent to camera access for a local preview and to submitting the data described above when you choose to submit your results.</p>
         </div>
         <div class="legal-footer">
-          <p class="cookie-notice">🍪 This application uses browser local storage for assessment security and session integrity. By continuing, you accept our data processing terms outlined above.</p>
-          <button id="btn-accept" class="btn btn-primary btn-full">Accept &amp; Continue</button>
+          <p class="cookie-notice">Please review the submission destination and scoring limitation before continuing.</p>
+          <button type="button" id="btn-accept" class="btn btn-primary btn-full">Accept &amp; Continue</button>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- ===== SCREEN 2: Candidate Profiling ===== -->
   <div id="screen-profile" class="screen hidden">
     <div class="center-wrap">
       <div class="card profile-card">
@@ -75,22 +50,22 @@
         <form id="profile-form" novalidate>
           <div class="form-group">
             <label for="input-firstname">First Name</label>
-            <input type="text" id="input-firstname" placeholder="Enter your first name" autocomplete="given-name" required>
+            <input type="text" id="input-firstname" placeholder="Enter your first name" autocomplete="given-name" aria-describedby="err-firstname" required>
             <span class="field-error" id="err-firstname"></span>
           </div>
           <div class="form-group">
             <label for="input-lastname">Last Name</label>
-            <input type="text" id="input-lastname" placeholder="Enter your last name" autocomplete="family-name" required>
+            <input type="text" id="input-lastname" placeholder="Enter your last name" autocomplete="family-name" aria-describedby="err-lastname" required>
             <span class="field-error" id="err-lastname"></span>
           </div>
           <div class="form-group">
             <label for="input-phone">Phone Number</label>
-            <input type="tel" id="input-phone" placeholder="+1 (555) 000-0000" autocomplete="tel" required>
+            <input type="tel" id="input-phone" placeholder="+1 (555) 000-0000" autocomplete="tel" aria-describedby="err-phone" required>
             <span class="field-error" id="err-phone"></span>
           </div>
           <div class="form-group">
             <label for="input-designation">Designation</label>
-            <input type="text" id="input-designation" placeholder="e.g. Software Engineer, Project Manager" autocomplete="organization-title" required>
+            <input type="text" id="input-designation" placeholder="e.g. Software Engineer, Project Manager" autocomplete="organization-title" aria-describedby="err-designation" required>
             <span class="field-error" id="err-designation"></span>
           </div>
           <button type="submit" class="btn btn-primary btn-full">Next</button>
@@ -99,39 +74,37 @@
     </div>
   </div>
 
-  <!-- ===== SCREEN 3: Camera Verification ===== -->
   <div id="screen-camera" class="screen hidden">
     <div class="center-wrap">
       <div class="card camera-card">
         <div class="card-header">
-          <h2>Identity Verification</h2>
-          <p class="subtitle">Camera access is required for live proctoring and assessment integrity monitoring. Your session will be actively supervised.</p>
+          <h2>Camera Verification</h2>
+          <p class="subtitle">Camera access is required before starting. Your preview stays in this browser.</p>
         </div>
         <div class="camera-info">
-          <div class="info-item">🔒 &nbsp;Secure encrypted assessment session</div>
-          <div class="info-item">📷 &nbsp;Live webcam identity monitoring</div>
-          <div class="info-item">🤖 &nbsp;AI-powered proctoring system active</div>
+          <div class="info-item">Camera access is mandatory to start the assessment.</div>
+          <div class="info-item">If access is blocked, allow it in browser site settings and click Start Test again.</div>
+          <div class="info-item">Switching tabs or applications will not invalidate your test.</div>
         </div>
-        <button id="btn-init-camera" class="btn btn-primary btn-full">Initialize Camera</button>
-        <div id="camera-status" class="camera-status hidden">
+        <button type="button" id="btn-init-camera" class="btn btn-primary btn-full">Check Camera</button>
+        <div id="camera-status" class="camera-status hidden" role="status">
           <div class="status-dot"></div>
-          <span>Camera active — Identity verified</span>
+          <span>Camera active</span>
         </div>
-        <button id="btn-start-test" class="btn btn-primary btn-full hidden">Start Test</button>
+        <p id="camera-error" class="field-error" role="alert"></p>
+        <button type="button" id="btn-start-test" class="btn btn-primary btn-full">Start Test</button>
       </div>
     </div>
   </div>
 
-  <!-- ===== SCREEN 4: Countdown ===== -->
   <div id="screen-countdown" class="screen hidden">
     <div class="countdown-wrap">
       <p class="countdown-label">Assessment begins in</p>
       <div id="countdown-number" class="countdown-number">5</div>
-      <p class="countdown-sub">Prepare yourself. Do not switch tabs or applications during the assessment.</p>
+      <p class="countdown-sub">You have 45 minutes. Your timer continues while you are away from this tab.</p>
     </div>
   </div>
 
-  <!-- ===== SCREEN 5: Test ===== -->
   <div id="screen-test" class="screen hidden">
     <div class="test-layout">
       <div class="test-header">
@@ -142,80 +115,73 @@
         </div>
       </div>
       <div class="question-image-frame">
-        <img id="question-image" src="" alt="IQ Assessment Question" draggable="false">
+        <img id="question-image" alt="IQ Assessment Question" draggable="false">
       </div>
-      <div class="choices-grid" id="choices-grid">
-        <button class="btn btn-choice" data-choice="a">A</button>
-        <button class="btn btn-choice" data-choice="b">B</button>
-        <button class="btn btn-choice" data-choice="c">C</button>
-        <button class="btn btn-choice" data-choice="d">D</button>
-        <button class="btn btn-choice" data-choice="e">E</button>
-        <button class="btn btn-choice" data-choice="f">F</button>
+      <div class="choices-grid" id="choices-grid" role="group" aria-label="Choose an answer">
+        <button type="button" class="btn btn-choice" data-choice="a" aria-pressed="false">A</button>
+        <button type="button" class="btn btn-choice" data-choice="b" aria-pressed="false">B</button>
+        <button type="button" class="btn btn-choice" data-choice="c" aria-pressed="false">C</button>
+        <button type="button" class="btn btn-choice" data-choice="d" aria-pressed="false">D</button>
+        <button type="button" class="btn btn-choice" data-choice="e" aria-pressed="false">E</button>
+        <button type="button" class="btn btn-choice" data-choice="f" aria-pressed="false">F</button>
       </div>
-
-      <!-- Navigation controls (Back / Next / Finish) — managed via JS -->
       <div id="dynamic-nav-container" class="nav-controls"></div>
     </div>
   </div>
 
-  <!-- ===== SCREEN: Time's Up Overlay ===== -->
   <div id="screen-timesup" class="screen hidden">
     <div class="timesup-wrap">
       <div class="timesup-card">
-        <div class="timesup-icon">⏱</div>
+        <div class="timesup-icon" aria-hidden="true">⏱</div>
         <h1 class="timesup-text">TIME IS UP</h1>
-        <p class="timesup-sub">Submitting your assessment...</p>
+        <p class="timesup-sub">Your answers are ready for submission.</p>
       </div>
     </div>
   </div>
 
-  <!-- ===== SCREEN: Submit Results (post-assessment) ===== -->
   <div id="screen-submit" class="screen hidden">
     <div class="center-wrap">
       <div class="card submit-card">
-        <div class="submit-icon">🎯</div>
+        <div class="submit-icon" aria-hidden="true">🎯</div>
         <h2>Assessment Complete</h2>
-        <p class="submit-desc">All 25 questions have been recorded and your cognitive profile has been compiled. Please submit your results to the HR Department to finalise the evaluation process.</p>
-        <button id="btn-submit-hr" class="btn-submit-hr">Submit Results to HR</button>
+        <p class="submit-desc">Your selected answers have been recorded for this session. Submit your results using the button below. Scores are provisional because question 9's answer key is unavailable.</p>
+        <button type="button" id="btn-submit-hr" class="btn-submit-hr">Submit Results to HR</button>
+        <p id="submission-status" class="field-error" role="alert"></p>
       </div>
     </div>
   </div>
 
-  <!-- ===== SCREEN 6: Final Completion ===== -->
   <div id="screen-final" class="screen hidden">
     <div class="center-wrap">
       <p class="final-text">You have completed the assessment.</p>
     </div>
   </div>
 
-  <!-- ===== MODAL: Confirm Submission ===== -->
-  <div id="modal-confirm" class="modal-overlay hidden">
+  <div id="modal-confirm" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
     <div class="modal-box modal-confirm-box">
-      <div class="modal-confirm-icon">📝</div>
-      <h2 class="modal-title">Submit Assessment?</h2>
-      <p class="modal-message">You are about to finalise and submit your assessment results. Once submitted, your answers cannot be changed.</p>
+      <div class="modal-confirm-icon" aria-hidden="true">📝</div>
+      <h2 class="modal-title" id="confirm-title">Submit Assessment?</h2>
+      <p class="modal-message">This will end your assessment and send your name, phone number, and provisional score to the configured endpoint. Your answers cannot be changed afterward.</p>
       <div class="modal-confirm-actions">
-        <button id="modal-confirm-cancel" class="btn-modal-secondary">Go Back</button>
-        <button id="modal-confirm-submit" class="btn-modal-primary">Yes, Submit</button>
+        <button type="button" id="modal-confirm-cancel" class="btn-modal-secondary">Go Back</button>
+        <button type="button" id="modal-confirm-submit" class="btn-modal-primary">Yes, Submit</button>
       </div>
     </div>
   </div>
 
-  <!-- ===== MODAL: Success Overlay ===== -->
-  <div id="modal-overlay" class="modal-overlay hidden">
+  <div id="modal-overlay" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="submission-title">
     <div class="modal-box">
-      <div class="modal-checkmark">✓</div>
-      <h2 class="modal-title">Success!</h2>
-      <p class="modal-message">Your assessment profiles and cognitive scores have been securely delivered to the HR Department.</p>
-      <button id="modal-close-btn" class="btn btn-primary modal-close-btn">Close</button>
+      <div class="modal-checkmark" aria-hidden="true">✓</div>
+      <h2 class="modal-title" id="submission-title">Submission Request Sent</h2>
+      <p class="modal-message" id="submission-message">Delivery has not been confirmed.</p>
+      <button type="button" id="modal-close-btn" class="btn btn-primary modal-close-btn">Close</button>
     </div>
   </div>
 
-  <!-- ===== FLOATING CAMERA WIDGET ===== -->
-  <div id="camera-float" class="camera-float hidden">
+  <div id="camera-float" class="camera-float hidden" aria-label="Local camera preview">
     <div class="rec-bar">
       <span class="rec-dot"></span>
-      <span class="rec-text">AI LIVE TRACKING / REC</span>
+      <span class="rec-text">LOCAL CAMERA PREVIEW</span>
     </div>
     <video id="camera-video" autoplay muted playsinline></video>
   </div>

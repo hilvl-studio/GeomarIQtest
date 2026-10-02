@@ -1,193 +1,176 @@
-/* ============================================================
-   GEOMAR GULF LLC — IQ ASSESSMENT PLATFORM
-   questions.js — Engine Logic, Anti-Cheat & Telegram Integration
-   ============================================================ */
-
+/* Geomar Gulf LLC - IQ assessment engine. */
 'use strict';
 
-/* ===== CONFIGURATION ===== */
-const TELEGRAM_BOT_TOKEN = "8983686015:AAEjimFk4BkXzdFcBUDneYL4iBVFcB5q05k";
-const TELEGRAM_CHAT_ID = "-1004394363945";
+const GOOGLE_SHEETS_WEBHOOK_URL = 'https://google.com';
+const TEST_DURATION_SECONDS = 45 * 60;
 
-/* ===== PUZZLEBOT / NOCODB WEBHOOK ===== */
-const WEBHOOK_URL = "L5nNg5rKtkkgEieu3CZeWqBxE9V3aLZv";
-
-/* ===== STATE VARIABLES ===== */
-let currentQuestion      = 0;
-let answers              = [];
-let timerInterval        = null;
-let totalTimeLeft        = 2700;   // 45 minutes in seconds
-let candidateFirstName   = '';
-let candidateLastName    = '';
-let candidatePhone       = '';
-let candidateDesignation = '';
-let testRunning          = false;
-let anticheatArmed       = false;
-let telegramSent         = false;
-let webhookSent          = false;
-let choicesLocked        = false;
-
-/* ===== QUESTION DATABASE =====
-   Each entry maps to test-images/[n].webp with its strict answer key.
-   Answer key: 1-f, 2-b, 3-a, 4-c, 5-d, 6-b, 7-f, 8-a, 9-d, 10-f,
-               11-d, 12-b, 13-e, 14-d, 15-b, 16-d, 17-b, 18-c, 19-d,
-               20-b, 21-c, 22-b, 23-b, 24-f, 25-f
-   ============================================================ */
-const QUESTIONS = [
-  { image: 'test-images/1.webp',  answer: 'f' },
-  { image: 'test-images/2.webp',  answer: 'b' },
-  { image: 'test-images/3.webp',  answer: 'a' },
-  { image: 'test-images/4.webp',  answer: 'c' },
-  { image: 'test-images/5.webp',  answer: 'd' },
-  { image: 'test-images/6.webp',  answer: 'b' },
-  { image: 'test-images/7.webp',  answer: 'f' },
-  { image: 'test-images/8.webp',  answer: 'a' },
-  { image: 'test-images/9.webp',  answer: 'd' },
-  { image: 'test-images/10.webp', answer: 'f' },
-  { image: 'test-images/11.webp', answer: 'd' },
-  { image: 'test-images/12.webp', answer: 'b' },
-  { image: 'test-images/13.webp', answer: 'e' },
-  { image: 'test-images/14.webp', answer: 'd' },
-  { image: 'test-images/15.webp', answer: 'b' },
-  { image: 'test-images/16.webp', answer: 'd' },
-  { image: 'test-images/17.webp', answer: 'b' },
-  { image: 'test-images/18.webp', answer: 'c' },
-  { image: 'test-images/19.webp', answer: 'd' },
-  { image: 'test-images/20.webp', answer: 'b' },
-  { image: 'test-images/21.webp', answer: 'c' },
-  { image: 'test-images/22.webp', answer: 'b' },
-  { image: 'test-images/23.webp', answer: 'b' },
-  { image: 'test-images/24.webp', answer: 'f' },
-  { image: 'test-images/25.webp', answer: 'f' },
+// Question 9's answer was corrupted in every available local copy.
+// Keep it explicitly unscored until the verified answer key is restored.
+const ANSWER_KEY = [
+  'f', 'b', 'a', 'c', 'd', 'b', 'f', 'a', null, 'f',
+  'd', 'b', 'e', 'd', 'b', 'd', 'b', 'c', 'd', 'b',
+  'c', 'b', 'b', 'f', 'f'
 ];
+const QUESTIONS = ANSWER_KEY.map(function(answer, index) {
+  return { image: 'test-images/' + (index + 1) + '.webp', answer: answer };
+});
 
-/* ===== DOM REFERENCES ===== */
-const SCREENS = {
-  blocked:   document.getElementById('screen-blocked'),
-  legal:     document.getElementById('screen-legal'),
-  profile:   document.getElementById('screen-profile'),
-  camera:    document.getElementById('screen-camera'),
-  countdown: document.getElementById('screen-countdown'),
-  test:      document.getElementById('screen-test'),
-  timesup:   document.getElementById('screen-timesup'),
-  submit:    document.getElementById('screen-submit'),
-  final:     document.getElementById('screen-final'),
-};
+let currentQuestion = 0;
+let answers = [];
+let candidateFirstName = '';
+let candidateLastName = '';
+let candidatePhone = '';
+let profileReady = false;
+let testRunning = false;
+let assessmentComplete = false;
+let choicesLocked = true;
+let timerInterval = null;
+let countdownInterval = null;
+let countdownRunning = false;
+let deadline = 0;
+let totalTimeLeft = TEST_DURATION_SECONDS;
+let cameraStream = null;
+let cameraRequestPending = false;
+let webhookPromise = null;
+let webhookSent = false;
 
-/* ============================================================
-   UTILITY FUNCTIONS
-   ============================================================ */
+function getElement(id) {
+  return document.getElementById(id);
+}
 
-/**
- * Hide all screens, then reveal the requested one.
- */
 function showScreen(name) {
-  Object.values(SCREENS).forEach(function(el) {
-    if (el) el.classList.add('hidden');
+  document.querySelectorAll('.screen').forEach(function(screen) {
+    screen.classList.toggle('hidden', screen.id !== 'screen-' + name);
   });
-  if (SCREENS[name]) {
-    SCREENS[name].classList.remove('hidden');
-  }
 }
 
-/**
- * Silent background Telegram webhook transmission.
- *
- * Uses application/x-www-form-urlencoded — a "simple" CORS request
- * that requires no preflight, ensuring maximum delivery reliability
- * across all browser environments including file:// origins.
- *
- * URL constructed via manual string concatenation (no template literals).
- */
-function sendTelegram(message) {
-  if (telegramSent) return;
-  telegramSent = true;
-
-  var url = 'https://api.telegram.org/bot' + TELEGRAM_BOT_TOKEN + '/sendMessage';
-
-  /* Build URL-encoded body — avoids JSON Content-Type CORS preflight */
-  var body = 'chat_id=' + encodeURIComponent(TELEGRAM_CHAT_ID) +
-             '&text='   + encodeURIComponent(message);
-
-  /* Primary: fetch API */
-  if (typeof fetch === 'function') {
-    fetch(url, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body:    body
-    }).catch(function() {
-      /* Fallback to XHR on fetch failure */
-      _xhrSend(url, body);
-    });
-  } else {
-    /* Fallback for environments without fetch */
-    _xhrSend(url, body);
-  }
+function hasLiveCamera() {
+  return Boolean(cameraStream && cameraStream.active &&
+    cameraStream.getVideoTracks().some(function(track) {
+      return track.readyState === 'live' && track.enabled;
+    }));
 }
 
-/** XHR fallback sender */
-function _xhrSend(url, body) {
+function stopCamera() {
+  if (cameraStream) {
+    cameraStream.getTracks().forEach(function(track) { track.stop(); });
+    cameraStream = null;
+  }
+  getElement('camera-video').srcObject = null;
+  getElement('camera-float').classList.add('hidden');
+  getElement('camera-status').classList.add('hidden');
+}
+
+function cameraError(message) {
+  getElement('camera-error').textContent = message;
+}
+
+async function requestCamera(startAssessment) {
+  if (!profileReady || cameraRequestPending || testRunning ||
+      countdownRunning || assessmentComplete) return;
+
+  cameraRequestPending = true;
+  choicesLocked = true;
+  const initButton = getElement('btn-init-camera');
+  const startButton = getElement('btn-start-test');
+  initButton.disabled = true;
+  startButton.disabled = true;
+  startButton.textContent = 'Requesting camera access...';
+  cameraError('');
+  showScreen('camera');
+
   try {
-    var xhr = new XMLHttpRequest();
-    xhr.open('POST', url, true);
-    xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-    xhr.send(body);
-  } catch (e) { /* silent */ }
-}
-
-/**
- * PuzzleBot / NocoDB webhook transmission.
- *
- * Fires a JSON POST to WEBHOOK_URL in parallel with the Telegram notification.
- * Field names are case-sensitive and match the NocoDB table schema exactly:
- *   - "Date"      → current local date/time string
- *   - "Candidate" → full name (first + last)
- *   - "Phone"     → candidate phone number
- *   - "Score"     → result formatted as "N/25"
- *
- * A webhookSent guard prevents duplicate submissions if concludeAssessment
- * is somehow invoked more than once in the same session.
- *
- * @param {number} score — raw numeric score (0-25)
- */
-function sendWebhook(score) {
-  if (webhookSent) return;
-  webhookSent = true;
-
-  var payload = {
-    'Date':      new Date().toLocaleString(),
-    'Candidate': candidateFirstName + ' ' + candidateLastName,
-    'Phone':     candidatePhone,
-    'Score':     score + '/25'
-  };
-
-  fetch(WEBHOOK_URL, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify(payload)
-  }).catch(function() {
-    /* Silent failure — webhook delivery is best-effort and
-       must never interrupt the candidate-facing UI flow.    */
-  });
-}
-
-/**
- * Evaluate recorded answers against the answer key.
- * @returns {number} correct answer count (0-25)
- */
-function calculateScore() {
-  var score = 0;
-  for (var i = 0; i < QUESTIONS.length; i++) {
-    if (answers[i] && answers[i] === QUESTIONS[i].answer) {
-      score++;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error('Camera access requires HTTPS or localhost and a supported browser.');
     }
+
+    // Always make a new request on each click, including after a denial.
+    // A persistent browser-level block must be changed in site settings.
+    stopCamera();
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: true,
+      audio: false
+    });
+    cameraStream = stream;
+    if (!hasLiveCamera()) {
+      throw new Error('No active camera was found. Connect a camera and try again.');
+    }
+
+    getElement('camera-video').srcObject = stream;
+    getElement('camera-float').classList.remove('hidden');
+    getElement('camera-status').classList.remove('hidden');
+    initButton.textContent = 'Check Camera Again';
+
+    if (startAssessment) beginCountdown();
+  } catch (error) {
+    stopCamera();
+    testRunning = false;
+    choicesLocked = true;
+    showScreen('camera');
+    cameraError(
+      error.name === 'NotAllowedError' || error.name === 'SecurityError'
+        ? 'Camera access is required. Allow camera access in your browser site settings, then click Start Test again.'
+        : error.name === 'NotFoundError'
+          ? 'No camera was found. Connect a camera, then click Start Test again.'
+          : error.name === 'NotReadableError'
+            ? 'The camera is unavailable or in use. Close other camera applications and try again.'
+            : error.message || 'Camera access failed. Check your camera and try again.'
+    );
+  } finally {
+    cameraRequestPending = false;
+    initButton.disabled = false;
+    startButton.disabled = false;
+    startButton.textContent = 'Start Test';
   }
-  return score;
 }
 
-/* ============================================================
-   TIMER ENGINE — 45-Minute Global Countdown
-   ============================================================ */
+function beginCountdown() {
+  if (!profileReady || !hasLiveCamera() || countdownRunning ||
+      testRunning || assessmentComplete) return;
+  countdownRunning = true;
+  choicesLocked = true;
+  showScreen('countdown');
+  let count = 5;
+  const number = getElement('countdown-number');
+  number.textContent = count;
+  countdownInterval = setInterval(function() {
+    count--;
+    if (count <= 0) {
+      clearInterval(countdownInterval);
+      countdownInterval = null;
+      countdownRunning = false;
+      launchTest();
+      return;
+    }
+    number.textContent = count;
+  }, 1000);
+}
+
+function launchTest() {
+  if (!profileReady || assessmentComplete || testRunning) return;
+  if (!hasLiveCamera()) {
+    choicesLocked = true;
+    showScreen('camera');
+    cameraError('The camera stopped before the test began. Click Start Test to request access again.');
+    return;
+  }
+  currentQuestion = 0;
+  answers = [];
+  totalTimeLeft = TEST_DURATION_SECONDS;
+  deadline = Date.now() + TEST_DURATION_SECONDS * 1000;
+  testRunning = true;
+  choicesLocked = false;
+  showScreen('test');
+  loadQuestion(0);
+  updateTimerDisplay();
+  clearActiveTimer();
+  timerInterval = setInterval(function() {
+    // Wall-clock time prevents background timer throttling from extending the test.
+    totalTimeLeft = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+    updateTimerDisplay();
+    if (totalTimeLeft === 0) handleGlobalTimeout();
+  }, 1000);
+}
 
 function clearActiveTimer() {
   if (timerInterval !== null) {
@@ -196,559 +179,213 @@ function clearActiveTimer() {
   }
 }
 
-/**
- * Render totalTimeLeft into the #timer-value element as MM:SS.
- * Also updates the timer widget background colour:
- *   Green  → default (> 15 min remaining)
- *   Yellow → ≤ 15 minutes remaining
- *   Red    → ≤ 5 minutes remaining
- */
 function updateTimerDisplay() {
-  var valEl    = document.getElementById('timer-value');
-  var widgetEl = document.getElementById('timer-widget');
-  if (!valEl || !widgetEl) return;
-
-  var minutes = Math.floor(totalTimeLeft / 60);
-  var seconds = totalTimeLeft % 60;
-  var display = (minutes < 10 ? '0' : '') + minutes + ':' + (seconds < 10 ? '0' : '') + seconds;
-
-  valEl.textContent = display;
-
-  /* Colour state transitions */
-  widgetEl.classList.remove('state-yellow', 'state-red');
-  if (totalTimeLeft <= 300) {          /* ≤ 5 minutes → Red */
-    widgetEl.classList.add('state-red');
-  } else if (totalTimeLeft <= 900) {   /* ≤ 15 minutes → Yellow */
-    widgetEl.classList.add('state-yellow');
-  }
-  /* > 15 minutes → default Green (no extra class needed) */
+  const minutes = Math.floor(totalTimeLeft / 60);
+  const seconds = totalTimeLeft % 60;
+  getElement('timer-value').textContent =
+    String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0');
+  const widget = getElement('timer-widget');
+  widget.classList.toggle('state-red', totalTimeLeft <= 300);
+  widget.classList.toggle('state-yellow', totalTimeLeft > 300 && totalTimeLeft <= 900);
 }
 
-/**
- * Start the 45-minute global exam countdown.
- * Decrements totalTimeLeft by 1 every second.
- * When it reaches zero, triggers the global timeout handler.
- */
-function startGlobalTimer() {
+function calculateScore() {
+  return QUESTIONS.reduce(function(score, question, index) {
+    return score + (question.answer !== null && answers[index] === question.answer ? 1 : 0);
+  }, 0);
+}
+
+function finishAssessment() {
+  if (!testRunning || assessmentComplete) return false;
+  assessmentComplete = true;
+  testRunning = false;
+  choicesLocked = true;
   clearActiveTimer();
-
-  timerInterval = setInterval(function() {
-    totalTimeLeft--;
-    updateTimerDisplay();
-
-    if (totalTimeLeft <= 0) {
-      clearActiveTimer();
-      handleGlobalTimeout();
-    }
-  }, 1000);
+  getElement('modal-confirm').classList.add('hidden');
+  stopCamera();
+  showScreen('submit');
+  return true;
 }
 
-/**
- * Called when the 45-minute global timer reaches zero.
- * Shows the TIME IS UP overlay, then concludes the assessment.
- * localStorage is cleared so the candidate may start fresh.
- */
 function handleGlobalTimeout() {
-  choicesLocked  = true;
-  testRunning    = false;
-  anticheatArmed = false;
-
+  if (!finishAssessment()) return;
   showScreen('timesup');
-
   setTimeout(function() {
-    concludeAssessment('Time Expired — 45 Minute Limit Reached', true);
-  }, 3000);
-}
-
-/* ============================================================
-   ANTI-CHEAT GLOBAL MONITORS
-   ============================================================ */
-
-/* Tab switch / window minimize detection */
-document.addEventListener('visibilitychange', function() {
-  if (document.hidden && anticheatArmed) {
-    terminateByAnticheat();
-  }
-});
-
-/* Focus loss detection (alt-tab, clicking external apps) */
-window.addEventListener('blur', function() {
-  if (anticheatArmed) {
-    terminateByAnticheat();
-  }
-});
-
-/* Reload / close interception */
-window.addEventListener('beforeunload', function(e) {
-  if (testRunning || anticheatArmed) {
-    e.preventDefault();
-    var msg = 'The assessment is currently in progress. Leaving or refreshing this page will permanently void your assessment session.';
-    e.returnValue = msg;
-    return msg;
-  }
-});
-
-/* ============================================================
-   ASSESSMENT CONCLUSION
-   ============================================================ */
-
-/**
- * Build and dispatch the Telegram result payload AND the PuzzleBot
- * webhook payload in parallel.
- *
- * ── INSERTION POINT ──────────────────────────────────────────
- * The sendWebhook(score) call was added immediately after
- * sendTelegram(msg) inside this function. Both fire concurrently
- * and independently; a failure in one does not affect the other.
- * ─────────────────────────────────────────────────────────────
- *
- * @param {string}  status           — termination status string
- * @param {boolean} skipSubmitScreen — if true, go straight to final screen
- *                                     (used for timer expiry path).
- *                                     if false (default), show the
- *                                     "Submit Results to HR" intermediate screen.
- *
- * localStorage is CLEARED on normal completion and timer expiry so the
- * candidate may open the link again and start a completely fresh session.
- */
-function concludeAssessment(status, skipSubmitScreen) {
-  testRunning    = false;
-  anticheatArmed = false;
-  choicesLocked  = true;
-
-  clearActiveTimer();
-
-  var score    = calculateScore();
-  var fullName = candidateFirstName + ' ' + candidateLastName;
-
-  /* Clear localStorage so the link is not permanently blocked */
-  localStorage.removeItem('test_status');
-  localStorage.removeItem('candidate_phone');
-
-  /* ── 1. Telegram group notification (existing logic — unchanged) ── */
-  var msg =
-    'IQ Assessment Report - Geomar Gulf LLC' + '\n\n'          +
-    'Candidate Name: '  + fullName            + '\n'            +
-    'Phone Number: '    + candidatePhone       + '\n'            +
-    'Designation: '     + candidateDesignation + '\n'            +
-    'Final Score: '     + score + ' out of 25' + '\n'            +
-    'Status: '          + status;
-
-  sendTelegram(msg);
-
-  /* ── 2. PuzzleBot / NocoDB webhook (new — fires in parallel) ── */
-  sendWebhook(score);
-
-  if (skipSubmitScreen) {
-    /* Timer-expiry path → go directly to final screen */
-    showScreen('final');
-  } else {
-    /* Normal finish path → show "Submit Results to HR" screen */
     showScreen('submit');
-  }
+  }, 1500);
 }
 
-/**
- * Anti-cheat termination path — sets voided state and fires Telegram alert.
- * localStorage is intentionally kept as 'voided' to permanently block re-entry
- * after a security infraction.
- */
-function terminateByAnticheat() {
-  if (!anticheatArmed) return;
-  anticheatArmed = false;
-  testRunning    = false;
-  choicesLocked  = true;
+async function sendGoogleSheetsWebhook() {
+  if (webhookSent) return 'unverified';
+  if (webhookPromise) return webhookPromise;
 
-  clearActiveTimer();
+  const payload = {
+    candidate: (candidateFirstName + ' ' + candidateLastName).trim(),
+    phone: candidatePhone,
+    score: calculateScore() + '/' + QUESTIONS.length
+  };
 
-  var score    = calculateScore();
-  var fullName = candidateFirstName + ' ' + candidateLastName;
-
-  /* Keep 'voided' in localStorage — this candidate remains blocked */
-  localStorage.setItem('test_status', 'voided');
-
-  var msg =
-    'IQ Assessment Report - Geomar Gulf LLC'                    + '\n\n' +
-    'Candidate Name: '  + fullName                              + '\n'   +
-    'Phone Number: '    + candidatePhone                        + '\n'   +
-    'Designation: '     + candidateDesignation                  + '\n'   +
-    'Final Score: '     + score + ' out of 25'                  + '\n'   +
-    'Status: Terminated by Anti-Cheat Infraction / Reload Attempt';
-
-  sendTelegram(msg);
-  showScreen('final');
-}
-
-/* ============================================================
-   INITIALISATION — Entry Point
-   ============================================================ */
-
-document.addEventListener('DOMContentLoaded', function() {
-
-  var storedStatus = localStorage.getItem('test_status');
-
-  if (storedStatus === 'running') {
-    /*
-     * Candidate refreshed the page mid-assessment.
-     * Mark as voided, fire Telegram alert, block re-entry.
-     */
-    var storedPhone = localStorage.getItem('candidate_phone') || 'Unknown';
-    localStorage.setItem('test_status', 'voided');
-
-    var alertMsg =
-      'IQ Assessment - Security Alert'                                    + '\n\n' +
-      'Phone: '  + storedPhone                                            + '\n'   +
-      'Event: Page reload detected during active assessment session'      + '\n'   +
-      'Status: Terminated by Anti-Cheat Infraction / Reload Attempt';
-
-    sendTelegram(alertMsg);
-    showScreen('blocked');
-    return;
-  }
-
-  if (storedStatus === 'voided') {
-    /* Anti-cheat violation in a previous session — block all re-entry */
-    showScreen('blocked');
-    return;
-  }
-
-  /* Clean state — begin normal flow from Step 1 */
-  showScreen('legal');
-
-  /* ── Submit Results to HR button → open success modal ── */
-  var btnSubmitHR = document.getElementById('btn-submit-hr');
-  if (btnSubmitHR) {
-    btnSubmitHR.addEventListener('click', function() {
-      var overlay = document.getElementById('modal-overlay');
-      if (overlay) overlay.classList.remove('hidden');
+  webhookPromise = (async function() {
+    // The body is JSON. A safelisted transport content type permits a
+    // cross-origin POST without an application/json CORS preflight.
+    // An opaque response cannot verify receipt or Google Sheets storage.
+    const response = await fetch(GOOGLE_SHEETS_WEBHOOK_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      credentials: 'omit',
+      redirect: 'error',
+      headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+      body: JSON.stringify(payload)
     });
-  }
-
-  /* ── Success modal Close button → transition to final screen ── */
-  var btnModalClose = document.getElementById('modal-close-btn');
-  if (btnModalClose) {
-    btnModalClose.addEventListener('click', function() {
-      var overlay = document.getElementById('modal-overlay');
-      if (overlay) overlay.classList.add('hidden');
-      showScreen('final');
-    });
-  }
-
-  /* ── Confirm modal: "Go Back" → close modal, stay on test ── */
-  var btnConfirmCancel = document.getElementById('modal-confirm-cancel');
-  if (btnConfirmCancel) {
-    btnConfirmCancel.addEventListener('click', function() {
-      var confirmModal = document.getElementById('modal-confirm');
-      if (confirmModal) confirmModal.classList.add('hidden');
-    });
-  }
-
-  /* ── Confirm modal: "Yes, Submit" → close modal, conclude assessment ── */
-  var btnConfirmSubmit = document.getElementById('modal-confirm-submit');
-  if (btnConfirmSubmit) {
-    btnConfirmSubmit.addEventListener('click', function() {
-      var confirmModal = document.getElementById('modal-confirm');
-      if (confirmModal) confirmModal.classList.add('hidden');
-      concludeAssessment('Completed Successfully', false);
-    });
-  }
-});
-
-/* ============================================================
-   STEP 1 — LEGAL & PRIVACY CONSENT
-   ============================================================ */
-
-document.getElementById('btn-accept').addEventListener('click', function() {
-  showScreen('profile');
-});
-
-/* ============================================================
-   STEP 2 — CANDIDATE PROFILING
-   ============================================================ */
-
-document.getElementById('profile-form').addEventListener('submit', function(e) {
-  e.preventDefault();
-
-  var firstName   = document.getElementById('input-firstname').value.trim();
-  var lastName    = document.getElementById('input-lastname').value.trim();
-  var phone       = document.getElementById('input-phone').value.trim();
-  var designation = document.getElementById('input-designation').value.trim();
-
-  var valid = true;
-
-  /* Validate First Name */
-  if (!firstName) {
-    document.getElementById('err-firstname').textContent = 'First name is required.';
-    document.getElementById('input-firstname').classList.add('error');
-    valid = false;
-  } else {
-    document.getElementById('err-firstname').textContent = '';
-    document.getElementById('input-firstname').classList.remove('error');
-  }
-
-  /* Validate Last Name */
-  if (!lastName) {
-    document.getElementById('err-lastname').textContent = 'Last name is required.';
-    document.getElementById('input-lastname').classList.add('error');
-    valid = false;
-  } else {
-    document.getElementById('err-lastname').textContent = '';
-    document.getElementById('input-lastname').classList.remove('error');
-  }
-
-  /* Validate Phone */
-  if (!phone) {
-    document.getElementById('err-phone').textContent = 'Phone number is required.';
-    document.getElementById('input-phone').classList.add('error');
-    valid = false;
-  } else {
-    document.getElementById('err-phone').textContent = '';
-    document.getElementById('input-phone').classList.remove('error');
-  }
-
-  /* Validate Designation */
-  if (!designation) {
-    document.getElementById('err-designation').textContent = 'Designation is required.';
-    document.getElementById('input-designation').classList.add('error');
-    valid = false;
-  } else {
-    document.getElementById('err-designation').textContent = '';
-    document.getElementById('input-designation').classList.remove('error');
-  }
-
-  if (!valid) return;
-
-  candidateFirstName   = firstName;
-  candidateLastName    = lastName;
-  candidatePhone       = phone;
-  candidateDesignation = designation;
-
-  showScreen('camera');
-});
-
-/* ============================================================
-   STEP 3 — CAMERA VERIFICATION
-   ============================================================ */
-
-document.getElementById('btn-init-camera').addEventListener('click', function() {
-  var self = this;
-  self.disabled    = true;
-  self.textContent = 'Requesting access...';
-
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    /* Browser does not support getUserMedia — allow continuation */
-    self.classList.add('hidden');
-    document.getElementById('btn-start-test').classList.remove('hidden');
-    return;
-  }
-
-  navigator.mediaDevices.getUserMedia({ video: true, audio: false })
-    .then(function(stream) {
-      var videoEl = document.getElementById('camera-video');
-      videoEl.srcObject = stream;
-
-      /* Mount floating live camera widget */
-      document.getElementById('camera-float').classList.remove('hidden');
-
-      /* Update camera screen UI */
-      self.classList.add('hidden');
-      document.getElementById('camera-status').classList.remove('hidden');
-      document.getElementById('btn-start-test').classList.remove('hidden');
-    })
-    .catch(function() {
-      /* Camera access denied — allow candidate to continue without camera */
-      self.classList.add('hidden');
-      document.getElementById('btn-start-test').classList.remove('hidden');
-    });
-});
-
-document.getElementById('btn-start-test').addEventListener('click', function() {
-  beginCountdown();
-});
-
-/* ============================================================
-   STEP 4 — ANIMATED COUNTDOWN (5 -> 1)
-   ============================================================ */
-
-function beginCountdown() {
-  /* Commit test_status to localStorage immediately */
-  localStorage.setItem('test_status', 'running');
-  localStorage.setItem('candidate_phone', candidatePhone);
-
-  testRunning = true;
-
-  showScreen('countdown');
-
-  var count = 5;
-  var numEl = document.getElementById('countdown-number');
-
-  function animateIn(n) {
-    /* Reset to scaled-up invisible state */
-    numEl.style.transition = 'none';
-    numEl.style.transform  = 'scale(1.45)';
-    numEl.style.opacity    = '0';
-    numEl.textContent      = n;
-
-    /* Force layout reflow before applying transition */
-    void numEl.offsetWidth;
-
-    /* Animate into natural position */
-    numEl.style.transition = 'transform 0.55s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.38s ease';
-    numEl.style.transform  = 'scale(1)';
-    numEl.style.opacity    = '1';
-  }
-
-  function animateOut(callback) {
-    numEl.style.transition = 'transform 0.28s ease-in, opacity 0.28s ease-in';
-    numEl.style.transform  = 'scale(0.45)';
-    numEl.style.opacity    = '0';
-    setTimeout(callback, 300);
-  }
-
-  animateIn(count);
-
-  var tick = setInterval(function() {
-    count--;
-
-    if (count <= 0) {
-      clearInterval(tick);
-      animateOut(function() {
-        anticheatArmed = true;
-        launchTest();
-      });
-      return;
+    if (response.type !== 'opaque' && !response.ok) {
+      throw new Error('Submission failed with HTTP status ' + response.status + '.');
     }
+    webhookSent = true;
+    return response.type === 'opaque' ? 'unverified' : 'confirmed';
+  })();
 
-    animateOut(function() {
-      animateIn(count);
-    });
-
-  }, 1000);
+  try {
+    return await webhookPromise;
+  } finally {
+    webhookPromise = null;
+  }
 }
 
-/* ============================================================
-   STEP 5 — CORE TEST ENGINE
-   ============================================================ */
+async function submitResults() {
+  if (!assessmentComplete || webhookPromise) return;
+  const button = getElement('btn-submit-hr');
+  button.disabled = true;
+  button.textContent = 'Submitting...';
+  getElement('submission-status').textContent = '';
 
-function launchTest() {
-  currentQuestion = 0;
-  answers         = [];
-  choicesLocked   = false;
-  totalTimeLeft   = 2700;   /* Reset to 45:00 */
-
-  showScreen('test');
-
-  /* Render initial timer display then start the global countdown */
-  updateTimerDisplay();
-  startGlobalTimer();
-
-  loadQuestion(0);
+  try {
+    const result = await sendGoogleSheetsWebhook();
+    getElement('submission-title').textContent =
+      result === 'confirmed' ? 'Submission Complete' : 'Submission Request Sent';
+    getElement('submission-message').textContent =
+      result === 'confirmed'
+        ? 'The configured endpoint accepted your assessment results.'
+        : 'The request was sent to the configured endpoint. Browser cross-origin restrictions prevent confirmation of delivery to HR or Google Sheets.';
+    getElement('modal-overlay').classList.remove('hidden');
+    button.textContent = 'Request Sent';
+  } catch (error) {
+    getElement('submission-status').textContent =
+      'Unable to submit results. Check your connection and try again. ' + error.message;
+    button.disabled = false;
+    button.textContent = 'Retry Submission';
+  }
 }
 
-/**
- * Load a question by zero-based index.
- * Updates the question image, counter, navigation controls,
- * and highlights any previously saved answer for this question.
- */
 function loadQuestion(index) {
-  /* Guard against out-of-range indices */
-  if (index < 0) return;
-  if (index >= QUESTIONS.length) return;
-
-  /* Sync global currentQuestion tracker */
+  if (!testRunning || choicesLocked || index < 0 || index >= QUESTIONS.length) return;
   currentQuestion = index;
-  choicesLocked   = false;
-
-  var q = QUESTIONS[index];
-
-  /* Update question image */
-  document.getElementById('question-image').src = q.image;
-
-  /* Update counter label */
-  document.getElementById('question-counter').textContent =
+  const image = getElement('question-image');
+  image.src = QUESTIONS[index].image;
+  image.alt = 'IQ assessment question ' + (index + 1);
+  getElement('question-counter').textContent =
     'Question ' + (index + 1) + ' of ' + QUESTIONS.length;
-
-  /* Render navigation buttons and highlight saved answer */
   renderNavigationControls(index);
 }
 
-/* ============================================================
-   NAVIGATION CONTROLS RENDERER
-   ============================================================ */
-
-/**
- * Inject Back / Next / Finish Assessment buttons into #dynamic-nav-container.
- * Applies the .btn-nav class for full button styling.
- * Highlights the previously saved answer for this question index.
- * "Finish Assessment" opens the custom confirm modal instead of a native dialog.
- */
 function renderNavigationControls(index) {
-  var controlsFrame = document.getElementById('dynamic-nav-container');
-  if (!controlsFrame) return;
+  const isLast = index === QUESTIONS.length - 1;
+  getElement('dynamic-nav-container').innerHTML =
+    '<button type="button" class="btn-nav" id="btn-nav-back"' +
+    (index === 0 ? ' disabled' : '') + '>&#8592; Back</button>' +
+    (isLast
+      ? '<button type="button" class="btn-nav finish" id="btn-nav-finish">Finish Assessment</button>'
+      : '<button type="button" class="btn-nav" id="btn-nav-next">Next &#8594;</button>');
 
-  var isFirst = (index === 0);
-  var isLast  = (index === QUESTIONS.length - 1);
-
-  /* Build button HTML */
-  var html =
-    '<button class="btn-nav" id="btn-nav-back"' + (isFirst ? ' disabled' : '') + '>' +
-    '&#8592; Back' +
-    '</button>';
-
-  if (isLast) {
-    html += '<button class="btn-nav finish" id="btn-nav-finish">Finish Assessment</button>';
-  } else {
-    html += '<button class="btn-nav" id="btn-nav-next">Next &#8594;</button>';
-  }
-
-  controlsFrame.innerHTML = html;
-
-  /* ── Highlight saved answer for this question (dark graphite) ── */
-  document.querySelectorAll('.btn-choice').forEach(function(btn) {
-    btn.classList.remove('selected');
-    if (answers[index] && answers[index] === btn.getAttribute('data-choice')) {
-      btn.classList.add('selected');
-    }
+  document.querySelectorAll('.btn-choice').forEach(function(button) {
+    const selected = answers[index] === button.dataset.choice;
+    button.classList.toggle('selected', selected);
+    button.setAttribute('aria-pressed', String(selected));
   });
-
-  /* ── Bind navigation click handlers ── */
-  document.getElementById('btn-nav-back').onclick = function() {
-    loadQuestion(index - 1);
-  };
-
+  getElement('btn-nav-back').onclick = function() { loadQuestion(index - 1); };
   if (isLast) {
-    /* Open the custom styled confirm modal — no native confirm() dialog */
-    document.getElementById('btn-nav-finish').onclick = function() {
-      var confirmModal = document.getElementById('modal-confirm');
-      if (confirmModal) confirmModal.classList.remove('hidden');
+    getElement('btn-nav-finish').onclick = function() {
+      if (testRunning && !choicesLocked) {
+        getElement('modal-confirm').classList.remove('hidden');
+      }
     };
   } else {
-    document.getElementById('btn-nav-next').onclick = function() {
-      loadQuestion(index + 1);
-    };
+    getElement('btn-nav-next').onclick = function() { loadQuestion(index + 1); };
   }
 }
 
-/* ============================================================
-   CHOICE BUTTON HANDLER
-   Clicking a choice records the answer and highlights the button.
-   Does NOT auto-advance — the candidate uses the Next button to proceed.
-   ============================================================ */
+function initializeAssessment() {
+  // Remove obsolete persistent locks left by previous versions.
+  try {
+    localStorage.removeItem('test_status');
+    localStorage.removeItem('candidate_phone');
+  } catch (error) {
+    // Assessment remains usable when browser storage is unavailable.
+  }
+  showScreen('legal');
 
-document.getElementById('choices-grid').addEventListener('click', function(e) {
-  if (choicesLocked) return;
-
-  var btn = e.target.closest('.btn-choice');
-  if (!btn) return;
-
-  var choice = btn.getAttribute('data-choice');
-
-  /* Record answer for the current question */
-  answers[currentQuestion] = choice;
-
-  /* Update visual selection — remove from all, apply to clicked */
-  document.querySelectorAll('.btn-choice').forEach(function(b) {
-    b.classList.remove('selected');
+  getElement('btn-accept').addEventListener('click', function() {
+    showScreen('profile');
   });
-  btn.classList.add('selected');
-});
+
+  getElement('profile-form').addEventListener('submit', function(event) {
+    event.preventDefault();
+    if (testRunning || countdownRunning || assessmentComplete) return;
+    const fields = [
+      ['firstname', 'First name'],
+      ['lastname', 'Last name'],
+      ['phone', 'Phone number'],
+      ['designation', 'Designation']
+    ];
+    let valid = true;
+    fields.forEach(function(field) {
+      const input = getElement('input-' + field[0]);
+      const missing = !input.value.trim();
+      input.classList.toggle('error', missing);
+      input.setAttribute('aria-invalid', String(missing));
+      getElement('err-' + field[0]).textContent =
+        missing ? field[1] + ' is required.' : '';
+      if (missing) valid = false;
+    });
+    if (!valid) return;
+    candidateFirstName = getElement('input-firstname').value.trim();
+    candidateLastName = getElement('input-lastname').value.trim();
+    candidatePhone = getElement('input-phone').value.trim();
+    profileReady = true;
+    showScreen('camera');
+  });
+
+  getElement('btn-init-camera').addEventListener('click', function() {
+    requestCamera(false);
+  });
+  getElement('btn-start-test').addEventListener('click', function() {
+    requestCamera(true);
+  });
+  getElement('modal-confirm-cancel').addEventListener('click', function() {
+    getElement('modal-confirm').classList.add('hidden');
+  });
+  getElement('modal-confirm-submit').addEventListener('click', function() {
+    if (finishAssessment()) submitResults();
+  });
+  getElement('btn-submit-hr').addEventListener('click', submitResults);
+  getElement('modal-close-btn').addEventListener('click', function() {
+    getElement('modal-overlay').classList.add('hidden');
+    showScreen('final');
+  });
+  getElement('choices-grid').addEventListener('click', function(event) {
+    if (!testRunning || choicesLocked) return;
+    const button = event.target.closest('.btn-choice');
+    if (!button || !event.currentTarget.contains(button)) return;
+    answers[currentQuestion] = button.dataset.choice;
+    document.querySelectorAll('.btn-choice').forEach(function(choice) {
+      const selected = choice === button;
+      choice.classList.toggle('selected', selected);
+      choice.setAttribute('aria-pressed', String(selected));
+    });
+  });
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initializeAssessment, { once: true });
+} else {
+  initializeAssessment();
+}

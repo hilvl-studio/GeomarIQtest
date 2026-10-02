@@ -1,0 +1,65 @@
+/* Responsive corrections to the existing assessment theme. */
+.center-wrap {
+  min-height: auto;
+  align-items: flex-start;
+}
+.center-wrap > .card {
+  margin-top: auto;
+  margin-bottom: auto;
+  flex-shrink: 0;
+}
+#screen-camera .center-wrap,
+.test-layout {
+  padding-top: 140px;
+}
+.test-header {
+  min-width: 0;
+}
+.modal-overlay {
+  overflow-y: auto;
+  align-items: flex-start;
+}
+.modal-box {
+  margin-top: auto;
+  margin-bottom: auto;
+  flex-shrink: 0;
+}
+#camera-error,
+#submission-status {
+  margin-top: 16px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+  transform: none;
+}
+button:focus-visible {
+  outline: 3px solid #d97706;
+  outline-offset: 3px;
+}
+.rec-dot {
+  background: var(--timer-green);
+  animation: none;
+}
+@media (max-width: 480px) {
+  #screen-camera .center-wrap,
+  .test-layout {
+    padding-top: 112px;
+  }
+  .test-header {
+    padding-right: 0;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .brand-name {
+    font-size: 0.95rem;
+  }
+  .btn-submit-hr {
+    width: 100%;
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}
