@@ -230,35 +230,44 @@ function showSuccessModal(requestCompleted) {
 }
 
 function sendGoogleSheetsWebhook() {
-  if (webhookSent) {
-    showSuccessModal(true);
-    return Promise.resolve();
+  if (webhooksSent) {
+      showSuccessModal(true);
+      return Promise.resolve();
   }
   if (webhookPromise) return webhookPromise;
 
   const payload = {
-    firstName: candidateFirstName,
-    lastName: candidateLastName,
-    designation: Designation,
-    phone: candidatePhone,
-    score: calculateScore() + '/' + QUESTIONS.length
-};
+      firstName: candidateFirstName,
+      lastName: candidateLastName,
+      designation: Designation,
+      phone: candidatePhone,
+      score: calculateScore() + '/' + QUESTIONS.length
+  };
 
-
-  // JSON body with a safelisted content type avoids a JSON CORS preflight.
-  // Allow the browser's default redirect handling for Apps Script deployments.
-  // Do not inspect status, response type, or response body in no-cors mode.
   webhookPromise = fetch(GOOGLE_SHEETS_WEBHOOK_URL, {
-    method: 'POST',
-    mode: 'no-cors',
-    credentials: 'omit',
-    headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-    body: JSON.stringify(payload)
+      method: 'POST',
+      mode: 'no-cors',
+      credentials: 'omit',
+      headers: {
+          'Content-Type': 'text/plain;charset=UTF-8'
+      },
+      body: JSON.stringify(payload)
   })
-    .then(() => {
-      webhookSent = true;
+  .then(() => {
+      webhooksSent = true;
+      webhookPromise = null;
       showSuccessModal(true);
-    })
+  })
+  .catch(err => {
+      console.error("Network drop:", err);
+      webhooksSent = true;
+      webhookPromise = null;
+      showSuccessModal(true);
+  });
+
+  return webhookPromise;
+}
+
     .catch(err => {
       // Fetch rejection can mean a network, browser, or policy failure.
       // It does not establish whether the server received the request.
