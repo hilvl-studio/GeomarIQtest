@@ -1,7 +1,7 @@
 /* Geomar Gulf LLC - IQ assessment engine. */
 'use strict';
 
-const GOOGLE_SHEETS_WEBHOOK_URL = "https://google.com";
+const GOOGLE_SHEETS_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbxZKGhalgbbJYcmplXUAEPUxrojXfsnCofLaU4u-f_nAw0i3QUNqqUkgMIegVDX-UoS/exec";
 const TEST_DURATION_SECONDS = 45 * 60;
 
 // Question 9's answer was corrupted in the available local copies.
