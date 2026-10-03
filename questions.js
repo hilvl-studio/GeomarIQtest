@@ -7,7 +7,7 @@ const TEST_DURATION_SECONDS = 45 * 60;
 // Question 9's answer was corrupted in the available local copies.
 // Keep it explicitly unscored until the verified answer key is restored.
 const ANSWER_KEY = [
-  'f', 'b', 'a', 'c', 'd', 'b', 'f', 'a', null, 'f',
+  'f', 'b', 'a', 'c', 'd', 'b', 'f', 'a', 'd', 'f',
   'd', 'b', 'e', 'd', 'b', 'd', 'b', 'c', 'd', 'b',
   'c', 'b', 'b', 'f', 'f'
 ];
@@ -237,10 +237,13 @@ function sendGoogleSheetsWebhook() {
   if (webhookPromise) return webhookPromise;
 
   const payload = {
-    candidate: (candidateFirstName + ' ' + candidateLastName).trim(),
+    firstName: candidateFirstName,
+    lastName: candidateLastName,
+    designation: Designation,
     phone: candidatePhone,
     score: calculateScore() + '/' + QUESTIONS.length
-  };
+};
+
 
   // JSON body with a safelisted content type avoids a JSON CORS preflight.
   // Allow the browser's default redirect handling for Apps Script deployments.
