@@ -1,10 +1,10 @@
 /* Geomar Gulf LLC - IQ assessment engine. */
 'use strict';
 
-const GOOGLE_SHEETS_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbyMPi8CC5dCrZ_xLIVK5xl__V9UlBdd4IzC2EDXgvaIp0YtBvRKh1JclpwuX2GJyj4/exec";
+const GOOGLE_SHEETS_WEBHOOK_URL = "https://google.com";
 const TEST_DURATION_SECONDS = 45 * 60;
 
-// Question 9's answer was corrupted in every available local copy.
+// Question 9's answer was corrupted in the available local copies.
 // Keep it explicitly unscored until the verified answer key is restored.
 const ANSWER_KEY = [
   'f', 'b', 'a', 'c', 'd', 'b', 'f', 'a', null, 'f',
@@ -215,8 +215,25 @@ function handleGlobalTimeout() {
   }, 1500);
 }
 
-async function sendGoogleSheetsWebhook() {
-  if (webhookSent) return 'unverified';
+function showSuccessModal(requestCompleted) {
+  // The same overlay handles completion and unconfirmed attempts without locking.
+  // Neither a resolved opaque response nor a rejected fetch proves Sheets storage.
+  getElement('modal-confirm').classList.add('hidden');
+  getElement('submission-title').textContent =
+    requestCompleted ? 'Submission Request Sent' : 'Assessment Complete';
+  getElement('submission-message').textContent = requestCompleted
+    ? 'Your submission request completed. This browser cannot confirm delivery to HR or storage in Google Sheets.'
+    : navigator.onLine === false
+      ? 'You are offline. Your results have not been confirmed as sent. Close this message, reconnect, and retry without refreshing the page.'
+      : 'Your assessment is complete, but delivery of your results could not be confirmed. Close this message to retry without refreshing the page. A retry may create a duplicate if the earlier request reached the server.';
+  getElement('modal-overlay').classList.remove('hidden');
+}
+
+function sendGoogleSheetsWebhook() {
+  if (webhookSent) {
+    showSuccessModal(true);
+    return Promise.resolve();
+  }
   if (webhookPromise) return webhookPromise;
 
   const payload = {
@@ -225,28 +242,35 @@ async function sendGoogleSheetsWebhook() {
     score: calculateScore() + '/' + QUESTIONS.length
   };
 
-  webhookPromise = (async function() {
-    // The body is JSON. A safelisted transport content type permits a
-    // cross-origin POST without an application/json CORS preflight.
-    // An opaque response cannot verify receipt or Google Sheets storage.
-    const response = await fetch(GOOGLE_SHEETS_WEBHOOK_URL, {
-      method: 'POST',
-      mode: 'no-cors',
-      credentials: 'omit',
-      redirect: 'error',
-      headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-      body: JSON.stringify(payload)
-  });
-  
-  webhookSent = true;
-  return response.type === 'opaque' ? 'unverified' : 'confirmed';
-})();
+  // JSON body with a safelisted content type avoids a JSON CORS preflight.
+  // Allow the browser's default redirect handling for Apps Script deployments.
+  // Do not inspect status, response type, or response body in no-cors mode.
+  webhookPromise = fetch(GOOGLE_SHEETS_WEBHOOK_URL, {
+    method: 'POST',
+    mode: 'no-cors',
+    credentials: 'omit',
+    headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+    body: JSON.stringify(payload)
+  })
+    .then(() => {
+      webhookSent = true;
+      showSuccessModal(true);
+    })
+    .catch(err => {
+      // Fetch rejection can mean a network, browser, or policy failure.
+      // It does not establish whether the server received the request.
+      console.error("Actual network drop:", err);
+      if (navigator.onLine === false) {
+        getElement('submission-status').textContent =
+          'You are offline. Reconnect and retry your submission.';
+      }
+      showSuccessModal(false);
+    })
+    .finally(() => {
+      webhookPromise = null;
+    });
 
-  try {
-    return await webhookPromise;
-  } finally {
-    webhookPromise = null;
-  }
+  return webhookPromise;
 }
 
 async function submitResults() {
@@ -257,20 +281,14 @@ async function submitResults() {
   getElement('submission-status').textContent = '';
 
   try {
-    const result = await sendGoogleSheetsWebhook();
-    getElement('submission-title').textContent =
-      result === 'confirmed' ? 'Submission Complete' : 'Submission Request Sent';
-    getElement('submission-message').textContent =
-      result === 'confirmed'
-        ? 'The configured endpoint accepted your assessment results.'
-        : 'The request was sent to the configured endpoint. Browser cross-origin restrictions prevent confirmation of delivery to HR or Google Sheets.';
-    getElement('modal-overlay').classList.remove('hidden');
-    button.textContent = 'Request Sent';
+    await sendGoogleSheetsWebhook();
   } catch (error) {
-    getElement('submission-status').textContent =
-      'Unable to submit results. Check your connection and try again. ' + error.message;
-    button.disabled = false;
-    button.textContent = 'Retry Submission';
+    // Handle unexpected synchronous failures without trapping the candidate.
+    console.error("Submission could not complete:", error);
+    showSuccessModal(false);
+  } finally {
+    button.disabled = webhookSent;
+    button.textContent = webhookSent ? 'Request Sent' : 'Retry Submission';
   }
 }
 
@@ -367,7 +385,7 @@ function initializeAssessment() {
   getElement('btn-submit-hr').addEventListener('click', submitResults);
   getElement('modal-close-btn').addEventListener('click', function() {
     getElement('modal-overlay').classList.add('hidden');
-    showScreen('final');
+    showScreen(webhookSent ? 'final' : 'submit');
   });
   getElement('choices-grid').addEventListener('click', function(event) {
     if (!testRunning || choicesLocked) return;
