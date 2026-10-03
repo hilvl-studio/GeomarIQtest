@@ -206,7 +206,6 @@ function finishAssessment() {
   showScreen('submit');
   return true;
 }
-
 function handleGlobalTimeout() {
   if (!finishAssessment()) return;
   showScreen('timesup');
@@ -216,8 +215,6 @@ function handleGlobalTimeout() {
 }
 
 function showSuccessModal(requestCompleted) {
-  // The same overlay handles completion and unconfirmed attempts without locking.
-  // Neither a resolved opaque response nor a rejected fetch proves Sheets storage.
   getElement('modal-confirm').classList.add('hidden');
   getElement('submission-title').textContent =
     requestCompleted ? 'Submission Request Sent' : 'Assessment Complete';
@@ -268,23 +265,6 @@ function sendGoogleSheetsWebhook() {
   return webhookPromise;
 }
 
-    .catch(err => {
-      // Fetch rejection can mean a network, browser, or policy failure.
-      // It does not establish whether the server received the request.
-      console.error("Actual network drop:", err);
-      if (navigator.onLine === false) {
-        getElement('submission-status').textContent =
-          'You are offline. Reconnect and retry your submission.';
-      }
-      showSuccessModal(false);
-    })
-    .finally(() => {
-      webhookPromise = null;
-    });
-
-  return webhookPromise;
-}
-
 async function submitResults() {
   if (!assessmentComplete || webhookPromise) return;
   const button = getElement('btn-submit-hr');
@@ -295,12 +275,11 @@ async function submitResults() {
   try {
     await sendGoogleSheetsWebhook();
   } catch (error) {
-    // Handle unexpected synchronous failures without trapping the candidate.
     console.error("Submission could not complete:", error);
     showSuccessModal(false);
   } finally {
-    button.disabled = webhookSent;
-    button.textContent = webhookSent ? 'Request Sent' : 'Retry Submission';
+    button.disabled = webhooksSent;
+    button.textContent = webhooksSent ? 'Request Sent' : 'Retry Submission';
   }
 }
 
